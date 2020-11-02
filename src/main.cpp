@@ -1,4 +1,7 @@
-#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_MLX90614.h>
 #include <ArduinoWebsockets.h>
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
@@ -6,28 +9,22 @@
 #include "esp_timer.h"
 #include "esp_camera.h"
 #include "camera_index.h"
-#include "Arduino.h"
 #include "fd_forward.h"
 #include "fr_forward.h"
 #include "fr_flash.h"
 #include "settings.h"
 
-
 #define ENROLL_CONFIRM_TIMES 5
 #define FACE_ID_SAVE_NUMBER 7
 
-// Select camera model
-//#define CAMERA_MODEL_WROVER_KIT
-//#define CAMERA_MODEL_ESP_EYE
-//#define CAMERA_MODEL_M5STACK_PSRAM
-//#define CAMERA_MODEL_M5STACK_WIDE
 #define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
 
 WiFiClientSecure client;
-UniversalTelegramBot bot(BOTtoken, client);
+// UniversalTelegramBot bot(BOTtoken, client);
 using namespace websockets;
 WebsocketsServer socket_server;
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
 camera_fb_t *fb = NULL;
 
@@ -41,7 +38,13 @@ bool face_recognised = false;
 
 void app_facenet_main();
 void app_httpserver_init();
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 typedef struct
 {
   uint8_t *image;
@@ -93,15 +96,24 @@ typedef struct
 
 httpd_resp_value st_name;
 
+void displayInfo(String name, String bodyTemp);
 void setup()
 {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
-
+  Wire.begin(SDA, SCL);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ; // Don't proceed, loop forever
+  }
+  mlx.begin();  
   digitalWrite(relay_pin, LOW);
   pinMode(relay_pin, OUTPUT);
-
+  pinMode(4, OUTPUT);
+  // digitalWrite(4, HIGH);
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -158,12 +170,19 @@ void setup()
   s->set_hmirror(s, 1);
 #endif
 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
+  // WiFi.begin(ssid, password);
+  display.clearDisplay();
+  display.setTextSize(1);              // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(0, 0);             // Start at top-left corner
+  display.println(F("Menyiapkan sistem . ."));
+  display.display();
+  WiFi.softAP(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED)
+  // {
+  //   delay(500);
+  //   Serial.print(".");
+  // }
   Serial.println("");
   Serial.println("WiFi connected");
 
@@ -171,13 +190,19 @@ void setup()
   app_facenet_main();
   socket_server.listen(82);
   delay(1000);
-  if (bot.sendMessage(CHAT_ID, "Kamera telah menyala, akses kamera di http://" + WiFi.localIP().toString(), ""))
-  {
-    Serial.println("Sukses mengirim pesan");
-    Serial.println("Akses kamera di http://" + WiFi.localIP().toString());
-  }
-  else
-    Serial.println("gagal");
+  // if (bot.sendMessage(CHAT_ID, "Kamera telah menyala, akses kamera di http://" + WiFi.localIP().toString(), ""))
+  // {
+  //   Serial.println("Sukses mengirim pesan");
+  //   Serial.println("Akses kamera di http://" + WiFi.localIP().toString());
+  // }
+  // else
+  //   Serial.println("gagal");
+  display.clearDisplay();
+  display.setTextSize(1);              // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(0, 0);             // Start at top-left corner
+  display.println(F("Sistem siap"));
+  display.display();
 }
 
 static esp_err_t index_handler(httpd_req_t *req)
@@ -197,7 +222,7 @@ void app_httpserver_init()
 {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   if (httpd_start(&camera_httpd, &config) == ESP_OK)
-    Serial.println("httpd_start");
+    Serial.println("Webserver start");
   {
     httpd_register_uri_handler(camera_httpd, &index_uri);
   }
@@ -244,6 +269,7 @@ void handle_message(WebsocketsClient &client, WebsocketsMessage msg)
   if (msg.data() == "stream")
   {
     g_state = START_STREAM;
+    digitalWrite(4, LOW);
     client.send("STREAMING");
   }
   if (msg.data() == "detect")
@@ -264,6 +290,7 @@ void handle_message(WebsocketsClient &client, WebsocketsMessage msg)
   if (msg.data() == "recognise")
   {
     g_state = START_RECOGNITION;
+    digitalWrite(4, HIGH);
     client.send("RECOGNISING");
   }
   if (msg.data().substring(0, 7) == "remove:")
@@ -301,7 +328,8 @@ void loop()
   send_face_list(client);
   client.send("STREAMING");
 
-  while (client.available())
+  // while (client.available())
+  while (true)
   {
     client.poll();
 
@@ -352,21 +380,39 @@ void loop()
 
           if (g_state == START_RECOGNITION && (st_face_list.count > 0))
           {
+            Serial.println("Start recognizing");
             face_id_node *f = recognize_face_with_name(&st_face_list, out_res.face_id);
             if (f)
             {
               char recognised_message[64];
-              sprintf(recognised_message, "Granted access for %s", f->id_name);
+              sprintf(recognised_message, "Nama : %s\nSuhu tubuh : %.2f C", f->id_name,mlx.readObjectTempC());
               open_door(client);
               client.send(recognised_message);
-              if (bot.sendMessage(CHAT_ID, "Akses diberikan ke " + String(f->id_name), ""))
-                Serial.println("Sukses mengirim pesan");
+              Serial.println(recognised_message);
+              display.clearDisplay();
+              display.setTextSize(1);              // Normal 1:1 pixel scale
+              display.setTextColor(SSD1306_WHITE); // Draw white text
+              display.setCursor(0, 0);             // Start at top-left corner
+              display.println("Nama : "+(String)f->id_name);
+              display.println();
+              display.println("Suhu : "+(String)mlx.readObjectTempC()+" C");
+              display.display();
+              delay(5000);
+              // if (bot.sendMessage(CHAT_ID, "Akses diberikan ke " + String(f->id_name), ""))
+              //   Serial.println("Sukses mengirim pesan");
             }
             else
             {
               client.send("FACE NOT RECOGNISED");
-              if (bot.sendMessage(CHAT_ID, "Seseorang mencoba mengakses kamera", ""))
-                Serial.println("Sukses mengirim pesan");
+              Serial.println("Wajah tidak dikenal");
+              display.clearDisplay();
+              display.setTextSize(1);              // Normal 1:1 pixel scale
+              display.setTextColor(SSD1306_WHITE); // Draw white text
+              display.setCursor(0, 0);             // Start at top-left corner
+              display.println(F("Wajah tidak dikenal"));
+              display.display();
+              // if (bot.sendMessage(CHAT_ID, "Seseorang mencoba mengakses kamera", ""))
+              //   Serial.println("Sukses mengirim pesan");
             }
           }
           dl_matrix3d_free(out_res.face_id);
@@ -391,4 +437,14 @@ void loop()
     esp_camera_fb_return(fb);
     fb = NULL;
   }
+}
+
+void displayInfo(String name, String bodyTemp)
+{
+  display.clearDisplay();
+  display.setTextSize(1);              // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(0, 0);             // Start at top-left corner
+  display.println(name);
+  display.display();
 }

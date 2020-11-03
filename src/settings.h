@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #define SDA 15
 #define SCL 14
-const char *ssid = "yai";
+const char *ssid = "bolt";
 const char *password = "11111111";
 
 #define CHAT_ID "1123810574"

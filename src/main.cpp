@@ -13,7 +13,7 @@
 #include "fr_forward.h"
 #include "fr_flash.h"
 #include "settings.h"
-
+#include "polines.h"
 #define ENROLL_CONFIRM_TIMES 5
 #define FACE_ID_SAVE_NUMBER 7
 
@@ -96,7 +96,7 @@ typedef struct
 
 httpd_resp_value st_name;
 
-void displayInfo(String name, String bodyTemp);
+void idle(void);
 void setup()
 {
   Serial.begin(115200);
@@ -109,7 +109,7 @@ void setup()
     for (;;)
       ; // Don't proceed, loop forever
   }
-  mlx.begin();  
+  mlx.begin();
   digitalWrite(relay_pin, LOW);
   pinMode(relay_pin, OUTPUT);
   pinMode(4, OUTPUT);
@@ -170,19 +170,17 @@ void setup()
   s->set_hmirror(s, 1);
 #endif
 
-  // WiFi.begin(ssid, password);
+  WiFi.begin(ssid, password);
   display.clearDisplay();
-  display.setTextSize(1);              // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);             // Start at top-left corner
-  display.println(F("Menyiapkan sistem . ."));
+  display.drawBitmap(0, 0, polines, 128, 64, SSD1306_WHITE);
   display.display();
-  WiFi.softAP(ssid, password);
-  // while (WiFi.status() != WL_CONNECTED)
-  // {
-  //   delay(500);
-  //   Serial.print(".");
-  // }
+  delay(5000);
+  // WiFi.softAP(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
   Serial.println("");
   Serial.println("WiFi connected");
 
@@ -197,12 +195,7 @@ void setup()
   // }
   // else
   //   Serial.println("gagal");
-  display.clearDisplay();
-  display.setTextSize(1);              // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);             // Start at top-left corner
-  display.println(F("Sistem siap"));
-  display.display();
+  idle();
 }
 
 static esp_err_t index_handler(httpd_req_t *req)
@@ -290,7 +283,7 @@ void handle_message(WebsocketsClient &client, WebsocketsMessage msg)
   if (msg.data() == "recognise")
   {
     g_state = START_RECOGNITION;
-    digitalWrite(4, HIGH);
+    // digitalWrite(4, HIGH);
     client.send("RECOGNISING");
   }
   if (msg.data().substring(0, 7) == "remove:")
@@ -332,7 +325,7 @@ void loop()
   while (true)
   {
     client.poll();
-
+    idle();
     if (millis() - interval > door_opened_millis)
     {                               // current time - face recognised time > 5 secs
       digitalWrite(relay_pin, LOW); //open relay
@@ -385,7 +378,7 @@ void loop()
             if (f)
             {
               char recognised_message[64];
-              sprintf(recognised_message, "Nama : %s\nSuhu tubuh : %.2f C", f->id_name,mlx.readObjectTempC());
+              sprintf(recognised_message, "Nama : %s\nSuhu tubuh : %.2f C", f->id_name, mlx.readObjectTempC());
               open_door(client);
               client.send(recognised_message);
               Serial.println(recognised_message);
@@ -393,9 +386,9 @@ void loop()
               display.setTextSize(1);              // Normal 1:1 pixel scale
               display.setTextColor(SSD1306_WHITE); // Draw white text
               display.setCursor(0, 0);             // Start at top-left corner
-              display.println("Nama : "+(String)f->id_name);
+              display.println("Nama : " + (String)f->id_name);
               display.println();
-              display.println("Suhu : "+(String)mlx.readObjectTempC()+" C");
+              display.println("Suhu : " + (String)mlx.readObjectTempC() + " C");
               display.display();
               delay(5000);
               // if (bot.sendMessage(CHAT_ID, "Akses diberikan ke " + String(f->id_name), ""))
@@ -439,12 +432,14 @@ void loop()
   }
 }
 
-void displayInfo(String name, String bodyTemp)
+void idle()
 {
   display.clearDisplay();
+  display.drawBitmap(49, 0, polines_small, 30, 32, SSD1306_WHITE);
+  display.setCursor(0, 40);
   display.setTextSize(1);              // Normal 1:1 pixel scale
   display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);             // Start at top-left corner
-  display.println(name);
+  display.println("IP   : " + WiFi.localIP().toString());
+  display.println("\nSuhu : " + (String)mlx.readAmbientTempC() + " C");
   display.display();
 }

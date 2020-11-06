@@ -1,100 +1,5 @@
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <Adafruit_MLX90614.h>
-#include <ArduinoWebsockets.h>
-#include <UniversalTelegramBot.h>
-#include <ArduinoJson.h>
-#include "esp_http_server.h"
-#include "esp_timer.h"
-#include "esp_camera.h"
-#include "camera_index.h"
-#include "fd_forward.h"
-#include "fr_forward.h"
-#include "fr_flash.h"
-#include "settings.h"
-#include "polines.h"
-#define ENROLL_CONFIRM_TIMES 5
-#define FACE_ID_SAVE_NUMBER 7
 
-#define CAMERA_MODEL_AI_THINKER
-#include "camera_pins.h"
-
-WiFiClientSecure client;
-// UniversalTelegramBot bot(BOTtoken, client);
-using namespace websockets;
-WebsocketsServer socket_server;
-Adafruit_MLX90614 mlx = Adafruit_MLX90614();
-
-camera_fb_t *fb = NULL;
-
-long current_millis;
-long last_detected_millis = 0;
-
-#define relay_pin 2 // pin 12 can also be used
-unsigned long door_opened_millis = 0;
-long interval = 5000; // open lock for ... milliseconds
-bool face_recognised = false;
-
-void app_facenet_main();
-void app_httpserver_init();
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-typedef struct
-{
-  uint8_t *image;
-  box_array_t *net_boxes;
-  dl_matrix3d_t *face_id;
-} http_img_process_result;
-
-static inline mtmn_config_t app_mtmn_config()
-{
-  mtmn_config_t mtmn_config = {0};
-  mtmn_config.type = FAST;
-  mtmn_config.min_face = 80;
-  mtmn_config.pyramid = 0.707;
-  mtmn_config.pyramid_times = 4;
-  mtmn_config.p_threshold.score = 0.6;
-  mtmn_config.p_threshold.nms = 0.7;
-  mtmn_config.p_threshold.candidate_number = 20;
-  mtmn_config.r_threshold.score = 0.7;
-  mtmn_config.r_threshold.nms = 0.7;
-  mtmn_config.r_threshold.candidate_number = 10;
-  mtmn_config.o_threshold.score = 0.7;
-  mtmn_config.o_threshold.nms = 0.7;
-  mtmn_config.o_threshold.candidate_number = 1;
-  return mtmn_config;
-}
-mtmn_config_t mtmn_config = app_mtmn_config();
-
-face_id_name_list st_face_list;
-static dl_matrix3du_t *aligned_face = NULL;
-
-httpd_handle_t camera_httpd = NULL;
-
-typedef enum
-{
-  START_STREAM,
-  START_DETECT,
-  SHOW_FACES,
-  START_RECOGNITION,
-  START_ENROLL,
-  ENROLL_COMPLETE,
-  DELETE_ALL,
-} en_fsm_state;
-en_fsm_state g_state;
-
-typedef struct
-{
-  char enroll_name[ENROLL_NAME_LEN];
-} httpd_resp_value;
-
-httpd_resp_value st_name;
+#include "main.h"
 
 void idle(void);
 void setup()
@@ -113,7 +18,7 @@ void setup()
   digitalWrite(relay_pin, LOW);
   pinMode(relay_pin, OUTPUT);
   pinMode(4, OUTPUT);
-  // digitalWrite(4, HIGH);
+  pinMode(RST, INPUT_PULLUP);
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -170,17 +75,40 @@ void setup()
   s->set_hmirror(s, 1);
 #endif
 
-  WiFi.begin(ssid, password);
   display.clearDisplay();
   display.drawBitmap(0, 0, polines, 128, 64, SSD1306_WHITE);
   display.display();
   delay(5000);
-  // WiFi.softAP(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
+  // if (digitalRead(RST) == LOW)
+  // {
+  //   Serial.println("setting mode");
+  //   WiFi.softAP(ssid, password);
+  //   display.clearDisplay();
+  //   display.setTextSize(2);
+  //   display.setTextColor(SSD1306_WHITE);
+  //   display.setCursor(0, 0);
+  //   display.println("Setting\nMode");
+  //   display.display();
+  //   app_httpserver_init();
+  //   app_facenet_main();
+  //   socket_server.listen(82);
+  //   while (true)
+  //   {
+  //     auto client = socket_server.accept();
+  //     client.onMessage(handle_message);
+  //     while (client.available())
+  //     {
+  //       client.poll();
+  //     }
+  //   }
+  // }
+  WiFi.softAP(ssid, password);
+  // WiFi.begin(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED)
+  // {
+  //   delay(500);
+  //   Serial.print(".");
+  // }
   Serial.println("");
   Serial.println("WiFi connected");
 
@@ -321,8 +249,8 @@ void loop()
   send_face_list(client);
   client.send("STREAMING");
 
-  // while (client.available())
-  while (true)
+  while (client.available())
+  // while (true)
   {
     client.poll();
     idle();

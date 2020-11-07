@@ -184,6 +184,20 @@ void setup()
   Serial.println("");
   Serial.println("WiFi connected");
 
+  // HTTP Post
+  HTTPClient http;
+  http.begin("http://47.241.6.200:3000/absensi");
+  http.addHeader("Content-Type", "application/json");
+  String httpRequestData = "{\"nim\":33218021,\"suhu\":35}";
+  int httpResponseCode = http.POST(httpRequestData);
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  if(httpResponseCode == 200){
+    Serial.println(http.getString());
+  }
+  http.end();
+  //
+  delay(1000);
   app_httpserver_init();
   app_facenet_main();
   socket_server.listen(82);

@@ -112,7 +112,7 @@ void setup()
   mlx.begin();
   digitalWrite(relay_pin, LOW);
   pinMode(relay_pin, OUTPUT);
-  pinMode(4, OUTPUT);
+  pinMode(LED, OUTPUT);
   // digitalWrite(4, HIGH);
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -183,21 +183,6 @@ void setup()
   }
   Serial.println("");
   Serial.println("WiFi connected");
-
-  // HTTP Post
-  HTTPClient http;
-  http.begin("http://47.241.6.200:3000/absensi");
-  http.addHeader("Content-Type", "application/json");
-  String httpRequestData = "{\"nim\":33218021,\"suhu\":35}";
-  int httpResponseCode = http.POST(httpRequestData);
-  Serial.print("HTTP Response code: ");
-  Serial.println(httpResponseCode);
-  if(httpResponseCode == 200){
-    Serial.println(http.getString());
-  }
-  http.end();
-  //
-  delay(1000);
   app_httpserver_init();
   app_facenet_main();
   socket_server.listen(82);
@@ -297,7 +282,7 @@ void handle_message(WebsocketsClient &client, WebsocketsMessage msg)
   if (msg.data() == "recognise")
   {
     g_state = START_RECOGNITION;
-    // digitalWrite(4, HIGH);
+    digitalWrite(4, HIGH);
     client.send("RECOGNISING");
   }
   if (msg.data().substring(0, 7) == "remove:")
@@ -335,8 +320,8 @@ void loop()
   send_face_list(client);
   client.send("STREAMING");
 
-  // while (client.available())
-  while (true)
+  while (client.available())
+  // while (true)
   {
     client.poll();
     idle();
@@ -391,8 +376,27 @@ void loop()
             face_id_node *f = recognize_face_with_name(&st_face_list, out_res.face_id);
             if (f)
             {
+              Serial.println("Mengirim data ke server . . .");
+              String name = f->id_name;
+              float suhu = mlx.readObjectTempC();
+              // HTTP Post
+              HTTPClient http;
+              http.begin("http://47.241.6.200:3000/absensi");
+              http.addHeader("Content-Type", "application/json");
+              String httpRequestData = "{\"nim\":"+(String)f->id_name+",\"suhu\":"+(String)suhu+"}";
+              int httpResponseCode = http.POST(httpRequestData);
+              Serial.print("HTTP Response code: ");
+              Serial.println(httpResponseCode);
+              if (httpResponseCode == 200)
+              {
+                name = http.getString();
+                Serial.println(name);
+              }
+              http.end();
+              //
+              delay(1000);
               char recognised_message[64];
-              sprintf(recognised_message, "Nama : %s\nSuhu tubuh : %.2f C", f->id_name, mlx.readObjectTempC());
+              sprintf(recognised_message, "Nama : %s\nSuhu tubuh : %.2f C", f->id_name, suhu);
               open_door(client);
               client.send(recognised_message);
               Serial.println(recognised_message);
@@ -400,9 +404,9 @@ void loop()
               display.setTextSize(1);              // Normal 1:1 pixel scale
               display.setTextColor(SSD1306_WHITE); // Draw white text
               display.setCursor(0, 0);             // Start at top-left corner
-              display.println("Nama : " + (String)f->id_name);
+              display.println("Nama : " + name);
               display.println();
-              display.println("Suhu : " + (String)mlx.readObjectTempC() + " C");
+              display.println("Suhu : " + (String)suhu + " C");
               display.display();
               delay(5000);
               // if (bot.sendMessage(CHAT_ID, "Akses diberikan ke " + String(f->id_name), ""))

@@ -3,7 +3,6 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_MLX90614.h>
 #include <ArduinoWebsockets.h>
-#include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
 #include "esp_http_server.h"
 #include "esp_timer.h"
@@ -187,13 +186,6 @@ void setup()
   app_facenet_main();
   socket_server.listen(82);
   delay(1000);
-  // if (bot.sendMessage(CHAT_ID, "Kamera telah menyala, akses kamera di http://" + WiFi.localIP().toString(), ""))
-  // {
-  //   Serial.println("Sukses mengirim pesan");
-  //   Serial.println("Akses kamera di http://" + WiFi.localIP().toString());
-  // }
-  // else
-  //   Serial.println("gagal");
   idle();
 }
 
@@ -320,8 +312,8 @@ void loop()
   send_face_list(client);
   client.send("STREAMING");
 
-  while (client.available())
-  // while (true)
+  // while (client.available())
+  while (true)
   {
     client.poll();
     idle();
@@ -376,6 +368,12 @@ void loop()
             face_id_node *f = recognize_face_with_name(&st_face_list, out_res.face_id);
             if (f)
             {
+              display.clearDisplay();
+              display.setTextSize(1);              // Normal 1:1 pixel scale
+              display.setTextColor(SSD1306_WHITE); // Draw white text
+              display.setCursor(0, 0);             // Start at top-left corner
+              display.println("Wajah terdeteksi\nMengirim data ke server");
+              display.display();
               Serial.println("Mengirim data ke server . . .");
               String name = f->id_name;
               float suhu = mlx.readObjectTempC();
@@ -383,7 +381,7 @@ void loop()
               HTTPClient http;
               http.begin("http://47.241.6.200:3000/absensi");
               http.addHeader("Content-Type", "application/json");
-              String httpRequestData = "{\"nim\":"+(String)f->id_name+",\"suhu\":"+(String)suhu+"}";
+              String httpRequestData = "{\"nim\":" + (String)f->id_name + ",\"suhu\":" + (String)suhu + "}";
               int httpResponseCode = http.POST(httpRequestData);
               Serial.print("HTTP Response code: ");
               Serial.println(httpResponseCode);
@@ -409,8 +407,6 @@ void loop()
               display.println("Suhu : " + (String)suhu + " C");
               display.display();
               delay(5000);
-              // if (bot.sendMessage(CHAT_ID, "Akses diberikan ke " + String(f->id_name), ""))
-              //   Serial.println("Sukses mengirim pesan");
             }
             else
             {
@@ -422,8 +418,7 @@ void loop()
               display.setCursor(0, 0);             // Start at top-left corner
               display.println(F("Wajah tidak dikenal"));
               display.display();
-              // if (bot.sendMessage(CHAT_ID, "Seseorang mencoba mengakses kamera", ""))
-              //   Serial.println("Sukses mengirim pesan");
+              delay(1000);
             }
           }
           dl_matrix3d_free(out_res.face_id);

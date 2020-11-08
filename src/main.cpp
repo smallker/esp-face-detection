@@ -112,6 +112,7 @@ void setup()
   digitalWrite(relay_pin, LOW);
   pinMode(relay_pin, OUTPUT);
   pinMode(LED, OUTPUT);
+  pinMode(RST, INPUT_PULLUP);
   // digitalWrite(4, HIGH);
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -169,12 +170,36 @@ void setup()
   s->set_hmirror(s, 1);
 #endif
 
-  WiFi.begin(ssid, password);
   display.clearDisplay();
   display.drawBitmap(0, 0, polines, 128, 64, SSD1306_WHITE);
   display.display();
   delay(5000);
-  // WiFi.softAP(ssid, password);
+  if (digitalRead(RST) == LOW)
+  {
+    WiFi.softAP(apssid, appassword);
+    WiFiServer server(80);
+    server.begin();
+    Serial.println("Setting mode");
+    while (true)
+    {
+      WiFiClient wifiClient = server.available();
+      if (client)
+      {
+        while (client.connected())
+        {
+          while (client.available() > 0)
+          {
+            char c = client.read();
+            Serial.write(c);
+          }
+          delay(10);
+        }
+        client.stop();
+        Serial.println("Client disconnected");
+      }
+    }
+  }
+  WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);

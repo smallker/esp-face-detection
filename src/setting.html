@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Setting sistem</h2>
+
+<button onclick="setWifi()">Setting WiFI</button>
+<button onclick="setServer()">Setting Server Absen</button>
+<p id="ssid"></p>
+<p id="password"></p>
+<p id="url"></p>
+<script>
+function setWifi() {
+  var baseHost = document.location.origin;
+  var streamUrl = baseHost + ":81";
+  const WS_URL = "ws://" + window.location.host + ":82";
+  const ws = new WebSocket(WS_URL);
+  var ssid = prompt("Masukkan SSID:", "ssid");
+  var password = prompt("Masukkan password:","password");
+  if (ssid == null || ssid == "" || password == null || password == "") {
+	alert("Input dibatalkan");
+  } else {
+	document.getElementById("ssid").innerHTML = "SSID : " + ssid;
+	document.getElementById("password").innerHTML = "Password : " +password;
+	ws.send(`{"ssid":${ssid},"password":${password}}`);
+  }
+}
+function setServer() {
+  var baseHost = document.location.origin;
+  var streamUrl = baseHost + ":81";
+  const WS_URL = "ws://" + window.location.host + ":82";
+  const ws = new WebSocket(WS_URL);
+  var url = prompt("Masukkan URL:", "http://example.com/absensi");
+    if (url == null || url == "") {
+    alert("Input dibatalkan");
+  } else {
+	document.getElementById("url").innerHTML = "Api URL : " +url;
+	ws.send(`{"url":${url}`);
+  }
+}
+</script>
+</body>
+</html>
